@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D 铜氧化反应 - 微观上 / 宏观下</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            user-select: none;
+            background-color: #ffffff;
+        }
+
+        /* --- 视口布局：微观在上，宏观在下 --- */
+        #micro-view {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 50vh;
+            /* 顶部微观：明亮的天蓝透气背景 */
+            background: linear-gradient(180deg, #e0f2fe 0%, #bae6fd 100%);
+            border-bottom: 3px solid rgba(0, 0, 0, 0.1);
+            box-sizing: border-box;
+            z-index: 1;
+        }
+        
+        #macro-view {
+            position: absolute;
+            top: 50vh;
+            left: 0;
+            width: 100vw;
+            height: 50vh;
+            /* 底部宏观：明亮的实验室桌面背景 */
+            background: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
+            z-index: 0;
+        }
+
+        /* --- 界面 UI --- 
+           位置移到角落，避免遮挡屏幕中央的实验主体 */
+        #ui-panel {
+            position: absolute;
+            bottom: 25px;
+            left: 25px;
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(8px); /* 毛玻璃效果 */
+            padding: 15px 25px;
+            border-radius: 12px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+            width: 320px;
+            z-index: 10;
+        }
+        h2 { margin: 0 0 8px 0; color: #1e293b; font-size: 17px; }
+        .equation {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 18px;
+            color: #d97706;
+            font-weight: bold;
+            margin-bottom: 12px;
+            background: rgba(254, 243, 199, 0.7);
+            padding: 6px;
+            border-radius: 6px;
+            text-align: center;
+        }
+        .slider-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #475569;
+            font-size: 14px;
+        }
+        input[type=range] { flex-grow: 1; margin: 0 10px; cursor: pointer; height: 6px; }
+
+        /* --- 温度计 --- 
+           放在右下角角落 */
+        #thermometer-container {
+            position: absolute;
+            right: 35px;
+            bottom: 35px;
+            width: 20px;
+            height: 160px;
+            background: rgba(255,255,255,0.85);
+            backdrop-filter: blur(5px);
+            border: 2px solid #cbd5e1;
+            border-radius: 20px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            padding: 4px;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            align-items: center;
+            z-index: 10;
+        }
+        #thermometer-bulb {
+            width: 30px;
+            height: 30px;
+            background: #3b82f6;
+            border-radius: 50%;
+            position: absolute;
+            bottom: -12px;
+            box-shadow: inset -3px -3px 8px rgba(0,0,0,0.2);
+            transition: background 0.3s;
+        }
+        #thermometer-liquid {
+            width: 10px;
+            height: 10%;
+            background: #3b82f6;
+            border-radius: 10px;
+            transition: height 0.1s linear, background 0.3s;
+        }
+
+        /* --- 原子标签 --- */
+        #micro-label-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 50vh;
+            pointer-events: none;
+            overflow: hidden;
+            z-index: 5;
+        }
+        .atom-label {
+            position: absolute;
+            color: #1e293b;
+            font-weight: 900;
+            font-size: 18px;
+            text-shadow: 2px 2px 0 #fff, -2px -2px 0 #fff, 2px -2px 0 #fff, -2px 2px 0 #fff; 
+            transform: translate(-50%, -50%);
+            display: none;
+        }
+
+        /* --- 视口提示文字 --- */
+        .view-title {
+            position: absolute;
+            left: 20px;
+            top: 15px;
+            background: rgba(255,255,255,0.7);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-weight: bold;
+            color: #475569;
+            font-size: 13px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            z-index: 5;
+            pointer-events: none;
+        }
+    </style>
+    <!-- 引入 Three.js 和 OrbitControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+
+    <!-- 顶部：微观视图 (化学反应在上面) -->
+    <div id="micro-view">
+        <div class="view-title">🔬 微观视角：分子键断裂与原子重组结合</div>
+        <!-- 标签容器 -->
+        <div id="micro-label-container">
+            <div id="label-cu1" class="atom-label">Cu</div>
+            <div id="label-cu2" class="atom-label">Cu</div>
+            <div id="label-o2"  class="atom-label">O₂</div>
+            <div id="label-o1"  class="atom-label">O</div>
+            <div id="label-o2-single" class="atom-label">O</div>
+        </div>
+    </div>
+
+    <!-- 底部：宏观视图 (铜板在底部) -->
+    <div id="macro-view">
+        <div class="view-title">🔎 宏观视角：铜片底部受热与表面氧化变化</div>
+    </div>
+    
+    <!-- 全局 UI -->
+    <div id="thermometer-container">
+        <div id="thermometer-liquid"></div>
+        <div id="thermometer-bulb"></div>
+    </div>
+
+    <div id="ui-panel">
+        <h2>🔥 铜氧化反应模拟</h2>
+        <div class="equation">2Cu + O₂ ➔ 2CuO</div>
+        <div class="slider-container">
+            <span>室温 ❄️</span>
+            <input type="range" id="heat-slider" min="0" max="100" value="0" step="0.5">
+            <span>高温 ♨️</span>
+        </div>
+        <div id="status-text" style="color: #64748b; font-size: 13px; margin-top:5px; line-height: 1.4;">
+            状态：常温，纯铜板与上方氧气分子接触。
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 1. 公共变量与颜色
+        // ==========================================
+        const colorCu = new THREE.Color(0xd27d46); // 明亮红铜色
+        const colorO  = new THREE.Color(0x3b82f6); // 明亮氧原子蓝
+        const colorBlack = new THREE.Color(0x282828); // 氧化铜灰黑
+        let currentProgress = 0;
+        let time = 0;
+
+        // ==========================================
+        // 2. 微观场景初始化 (上半屏)
+        // ==========================================
+        const microContainer = document.getElementById('micro-view');
+        const microScene = new THREE.Scene();
+
+        const microCamera = new THREE.PerspectiveCamera(40, window.innerWidth / (window.innerHeight / 2), 0.1, 100);
+        microCamera.position.set(0, 0, 13); // 稍微拉近一点
+
+        const microRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        microRenderer.setSize(window.innerWidth, window.innerHeight / 2);
+        microContainer.appendChild(microRenderer.domElement);
+
+        const microControls = new THREE.OrbitControls(microCamera, microRenderer.domElement);
+        microControls.enableDamping = true;
+        microControls.enableZoom = false; 
+        microControls.minAzimuthAngle = -Math.PI / 6; 
+        microControls.maxAzimuthAngle = Math.PI / 6;
+
+        // 明亮灯光
+        microScene.add(new THREE.AmbientLight(0xffffff, 1.0));
+        const microLight = new THREE.DirectionalLight(0xffffff, 0.5);
+        microLight.position.set(0, 5, 10);
+        microScene.add(microLight);
+
+        // 原子材质
+        const cuMat1 = new THREE.MeshStandardMaterial({ color: colorCu, metalness: 0.5, roughness: 0.3 });
+        const cuMat2 = cuMat1.clone();
+        const oMat1 = new THREE.MeshStandardMaterial({ color: colorO, metalness: 0.1, roughness: 0.2 });
+        const oMat2 = oMat1.clone();
+
+        const sphereGeo = new THREE.SphereGeometry(1, 32, 32);
+        
+        // 铜原子
+        const cuAtom1 = new THREE.Mesh(sphereGeo, cuMat1);
+        const cuAtom2 = new THREE.Mesh(sphereGeo, cuMat2);
+        cuAtom1.scale.set(1.4, 1.4, 1.4); 
+        cuAtom2.scale.set(1.4, 1.4, 1.4);
+        microScene.add(cuAtom1);
+        microScene.add(cuAtom2);
+
+        // 氧原子
+        const oAtom1 = new THREE.Mesh(sphereGeo, oMat1);
+        const oAtom2 = new THREE.Mesh(sphereGeo, oMat2);
+        oAtom1.scale.set(0.9, 0.9, 0.9);
+        oAtom2.scale.set(0.9, 0.9, 0.9);
+        microScene.add(oAtom1);
+        microScene.add(oAtom2);
+
+        // ==========================================
+        // 3. 宏观场景初始化 (下半屏)
+        // ==========================================
+        const macroContainer = document.getElementById('macro-view');
+        const macroScene = new THREE.Scene();
+        macroScene.fog = new THREE.Fog(0xf8fafc, 10, 40);
+
+        const macroCamera = new THREE.PerspectiveCamera(45, window.innerWidth / (window.innerHeight / 2), 0.1, 100);
+        macroCamera.position.set(0, 7, 10);
+
+        const macroRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        macroRenderer.setSize(window.innerWidth, window.innerHeight / 2);
+        macroRenderer.shadowMap.enabled = true;
+        macroContainer.appendChild(macroRenderer.domElement);
+
+        const macroControls = new THREE.OrbitControls(macroCamera, macroRenderer.domElement);
+        macroControls.enableDamping = true;
+        macroControls.maxPolarAngle = Math.PI / 2 - 0.1;
+
+        // 宏观灯光
+        macroScene.add(new THREE.AmbientLight(0xffffff, 0.8));
+        const macroDirLight = new THREE.DirectionalLight(0xffffff, 0.5);
+        macroDirLight.position.set(5, 10, 5);
+        macroDirLight.castShadow = true;
+        macroScene.add(macroDirLight);
+        
+        // 底部加热灯光
+        const macroBottomLight = new THREE.PointLight(0xff4500, 0, 10);
+        macroBottomLight.position.set(0, -2, 0);
+        macroScene.add(macroBottomLight);
+
+        // 宏观物体：铜片
+        const plateMaterial = new THREE.MeshStandardMaterial({
+            color: colorCu, metalness: 0.7, roughness: 0.2,
+            emissive: new THREE.Color(0x000000), emissiveIntensity: 0
+        });
+        const plate = new THREE.Mesh(new THREE.BoxGeometry(8, 0.15, 6), plateMaterial);
+        plate.castShadow = true; plate.receiveShadow = true;
+        macroScene.add(plate);
+
+        // 加热管
+        const heaters = [];
+        const heaterMaterial = new THREE.MeshBasicMaterial({ color: 0x444444 });
+        for(let i = -2; i <= 2; i+=2) {
+            const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 4), heaterMaterial);
+            tube.rotation.x = Math.PI / 2; tube.position.set(i, -1, 0);
+            macroScene.add(tube);
+            heaters.push(tube);
+        }
+
+        // ==========================================
+        // 4. 动画与交互逻辑
+        // ==========================================
+        const labels = {
+            cu1: document.getElementById('label-cu1'),
+            cu2: document.getElementById('label-cu2'),
+            o2:  document.getElementById('label-o2'),
+            o1:  document.getElementById('label-o1'),
+            o2_single: document.getElementById('label-o2-single')
+        };
+
+        document.getElementById('heat-slider').addEventListener('input', (e) => {
+            currentProgress = e.target.value / 100;
+            updateSimulation(currentProgress);
+        });
+
+        function updateSimulation(p) {
+            // UI 更新 (温度计)
+            const liquid = document.getElementById('thermometer-liquid');
+            const bulb = document.getElementById('thermometer-bulb');
+            liquid.style.height = (10 + p * 85) + '%';
+            let tempColor = p > 0.5 ? '#ef4444' : '#3b82f6'; // 红色或蓝色
+            liquid.style.background = tempColor;
+            bulb.style.background = tempColor;
+
+            const statusText = document.getElementById('status-text');
+
+            // --- 宏观逻辑 (下方铜板) ---
+            let heatP = Math.min(p / 0.4, 1.0);     
+            let oxP = Math.max(0, (p - 0.6) / 0.4); 
+
+            plateMaterial.emissive.copy(new THREE.Color(0x000000)).lerp(new THREE.Color(0xff4500), heatP * (1 - oxP));
+            plateMaterial.emissiveIntensity = heatP * 2.0;
+            plateMaterial.color.copy(colorCu).lerp(colorBlack, oxP);
+            plateMaterial.metalness = 0.7 - (oxP * 0.6);
+            plateMaterial.roughness = 0.2 + (oxP * 0.7);
+
+            macroBottomLight.intensity = heatP * 12;
+            heaters.forEach(h => h.material.color.copy(new THREE.Color(0x444444)).lerp(new THREE.Color(0xffeedd), heatP));
+
+            // --- 微观逻辑 (上方化学反应) ---
+            let cu1Pos = new THREE.Vector3(-2.8, -1.2, 0);
+            let cu2Pos = new THREE.Vector3(2.8, -1.2, 0);
+            
+            if (p < 0.3) {
+                // 阶段1：加热，O2从高处靠近
+                statusText.innerHTML = "状态：缓慢加热，上方的<b>氧分子(O₂)</b>热运动加剧并靠近受热表面。";
+                let drop = p / 0.3;
+                oAtom1.position.set(-0.7, 4 - 2.5 * drop, 0);
+                oAtom2.position.set(0.7, 4 - 2.5 * drop, 0);
+                
+                labels.o2.style.opacity = 1; labels.o1.style.opacity = 0; labels.o2_single.style.opacity = 0;
+                labels.cu1.innerText = "Cu"; labels.cu2.innerText = "Cu";
+
+                cuMat1.color.copy(colorCu); cuMat2.color.copy(colorCu);
+                oMat1.color.copy(colorO); oMat2.color.copy(colorO);
+            } 
+            else if (p >= 0.3 && p < 0.7) {
+                // 阶段2：断键并扑向 Cu
+                statusText.innerHTML = "状态：高温使 O₂ 共价键断裂，生成活泼的<b>氧原子</b>并结合铜原子。";
+                let moveP = (p - 0.3) / 0.4;
+                
+                let target1 = new THREE.Vector3(cu1Pos.x + 1.2, cu1Pos.y + 1.2, 0);
+                oAtom1.position.lerpVectors(new THREE.Vector3(-0.7, 1.5, 0), target1, moveP);
+                
+                let target2 = new THREE.Vector3(cu2Pos.x - 1.2, cu2Pos.y + 1.2, 0);
+                oAtom2.position.lerpVectors(new THREE.Vector3(0.7, 1.5, 0), target2, moveP);
+
+                labels.o2.style.opacity = 0; labels.o1.style.opacity = 1; labels.o2_single.style.opacity = 1;
+                labels.o1.innerText = "O"; labels.o2_single.innerText = "O";
+                labels.cu1.innerText = "Cu"; labels.cu2.innerText = "Cu";
+
+                cuMat1.color.copy(colorCu); cuMat2.color.copy(colorCu);
+                oMat1.color.copy(colorO); oMat2.color.copy(colorO);
+            } 
+            else {
+                // 阶段3：结合变黑 (CuO)
+                statusText.innerHTML = "状态：化合完成！生成黑色的<b>氧化铜(CuO)</b>，宏观铜片同时变黑。";
+                let blackP = (p - 0.7) / 0.3;
+
+                oAtom1.position.set(cu1Pos.x + 1.2, cu1Pos.y + 1.2, 0);
+                oAtom2.position.set(cu2Pos.x - 1.2, cu2Pos.y + 1.2, 0);
+
+                cuMat1.color.copy(colorCu).lerp(colorBlack, blackP);
+                cuMat2.color.copy(colorCu).lerp(colorBlack, blackP);
+                oMat1.color.copy(colorO).lerp(colorBlack, blackP);
+                oMat2.color.copy(colorO).lerp(colorBlack, blackP);
+
+                labels.o1.style.opacity = 0; labels.o2_single.style.opacity = 0;
+                labels.cu1.innerText = "CuO"; labels.cu2.innerText = "CuO";
+            }
+
+            cuAtom1.position.copy(cu1Pos);
+            cuAtom2.position.copy(cu2Pos);
+        }
+
+        // ==========================================
+        // 5. 标签坐标投射映射 (基于上半屏尺寸)
+        // ==========================================
+        function updateLabels() {
+            const w = window.innerWidth;
+            const h = window.innerHeight / 2;
+
+            const updatePos = (mesh, labelElement, offsetY = 0, offsetX = 0) => {
+                if (labelElement.style.opacity === '0') {
+                    labelElement.style.display = 'none';
+                    return;
+                }
+                labelElement.style.display = 'block';
+                const vector = new THREE.Vector3();
+                mesh.getWorldPosition(vector);
+                vector.y += offsetY; 
+                vector.x += offsetX;
+                vector.project(microCamera);
+
+                const x = (vector.x * .5 + .5) * w;
+                const y = -(vector.y * .5 - .5) * h;
+                
+                labelElement.style.left = `${x}px`;
+                labelElement.style.top = `${y}px`;
+            };
+
+            updatePos(cuAtom1, labels.cu1, -2.0);
+            updatePos(cuAtom2, labels.cu2, -2.0);
+            
+            if (currentProgress < 0.3) {
+                labels.o2.style.display = 'block';
+                const centerVec = new THREE.Vector3().addVectors(oAtom1.position, oAtom2.position).multiplyScalar(0.5);
+                centerVec.y += 1.4; 
+                centerVec.project(microCamera);
+                labels.o2.style.left = `${(centerVec.x * .5 + .5) * w}px`;
+                labels.o2.style.top  = `${-(centerVec.y * .5 - .5) * h}px`;
+            } else {
+                labels.o2.style.display = 'none';
+            }
+
+            updatePos(oAtom1, labels.o1, 1.2, -0.5);
+            updatePos(oAtom2, labels.o2_single, 1.2, 0.5);
+        }
+
+        // ==========================================
+        // 6. 渲染循环与适配
+        // ==========================================
+        window.addEventListener('resize', () => {
+            const w = window.innerWidth;
+            const halfH = window.innerHeight / 2;
+            
+            macroCamera.aspect = w / halfH;
+            macroCamera.updateProjectionMatrix();
+            macroRenderer.setSize(w, halfH);
+
+            microCamera.aspect = w / halfH;
+            microCamera.updateProjectionMatrix();
+            microRenderer.setSize(w, halfH);
+        });
+
+        function animate() {
+            requestAnimationFrame(animate);
+            time += 0.05;
+
+            // 微观原子热振动效果
+            let jitter = currentProgress * 0.08; 
+            cuAtom1.position.x = -2.8 + Math.sin(time * 6) * jitter;
+            cuAtom1.position.y = -1.2 + Math.cos(time * 5) * jitter;
+            cuAtom2.position.x = 2.8 + Math.sin(time * 6.5) * jitter;
+            cuAtom2.position.y = -1.2 + Math.cos(time * 5.5) * jitter;
+            
+            if(currentProgress >= 0.7) {
+                oAtom1.position.set(cuAtom1.position.x + 1.2, cuAtom1.position.y + 1.2, 0);
+                oAtom2.position.set(cuAtom2.position.x - 1.2, cuAtom2.position.y + 1.2, 0);
+            }
+
+            macroControls.update();
+            microControls.update();
+            updateLabels();
+
+            // 渲染：上半屏(微观)，下半屏(宏观)
+            microRenderer.render(microScene, microCamera);
+            macroRenderer.render(macroScene, macroCamera);
+        }
+        
+        // 启动
+        updateSimulation(0);
+        animate();
+    </script>
+</body>
+</html>
